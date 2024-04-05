@@ -193,7 +193,25 @@ namespace Sdk4me.GraphQL
         /// <exception cref="Sdk4meException"></exception>
         public async Task<DataList<TEntity>> Get<TEntity>(IQuery query) where TEntity : Node
         {
-            return await Get<TEntity>(ExecutionQueryBuilder.BuildQuery(query, itemsPerRequest), maximumRecursiveRequests);
+            return await Get<TEntity>(ExecutionQueryBuilder.BuildQuery(query, itemsPerRequest), maximumRecursiveRequests, AccountID);
+        }
+
+        /// <summary>
+        /// Query the 4me web service as an asynchronous operation.
+        /// </summary>
+        /// <typeparam name="TEntity">Any type implementing <see cref="Node"/>.</typeparam>
+        /// <param name="query">The query to execute.</param>
+        /// <param name="accountId">The account used for the asynchronous operation</param>
+        /// <returns>The task object representing the asynchronous operation.</returns>
+        /// <exception cref="Sdk4meException"></exception>
+        public async Task<DataList<TEntity>> Get<TEntity>(IQuery query, string accountId) where TEntity : Node
+        {
+            if (string.IsNullOrWhiteSpace(accountId))
+            {
+                throw new ArgumentException($"'{nameof(accountId)}' cannot be null or empty.", nameof(accountId));
+            }
+
+            return await Get<TEntity>(ExecutionQueryBuilder.BuildQuery(query, itemsPerRequest), maximumRecursiveRequests, accountId);
         }
 
         /// <summary>
@@ -202,9 +220,10 @@ namespace Sdk4me.GraphQL
         /// <typeparam name="TEntity">Any type implementing <see cref="Node"/>.</typeparam>
         /// <param name="executionQuery">The execution query to execute.</param>
         /// <param name="recursiveRequest">The number of recursive requests.</param>
+        /// <param name="accountId">The account used for the asynchronous operation</param>
         /// <returns>The task object representing the asynchronous operation.</returns>
         /// <exception cref="Sdk4meException"></exception>
-        private async Task<DataList<TEntity>> Get<TEntity>(ExecutionQuery executionQuery, int recursiveRequest) where TEntity : Node
+        private async Task<DataList<TEntity>> Get<TEntity>(ExecutionQuery executionQuery, int recursiveRequest, string accountId) where TEntity : Node
         {
             if (recursiveRequest <= 0)
                 return new();
@@ -214,7 +233,7 @@ namespace Sdk4me.GraphQL
                 throw new Sdk4meException($"The query exceeds the maximum allowed depth level connections value. The maximum value is set to {maximumQueryDepthLevelConnections}, and the query contains {highestDepthValue} depth level connections.");
 
             DataList<TEntity> retval = new();
-            using (HttpRequestMessage requestMessage = CreateHttpRequest())
+            using (HttpRequestMessage requestMessage = CreateHttpRequest(accountId))
             {
                 string query = $"{{\"query\":{JsonConvert.SerializeObject($"query{{{ExecutionQueryBuilder.GetGraphQLQuery(executionQuery)}}}")}}}";
                 JToken responseData = await SendHttpRequest(requestMessage, query, true);
@@ -235,11 +254,11 @@ namespace Sdk4me.GraphQL
                     switch (executionQuery.UpdateCursors(queryPagesInfo))
                     {
                         case 0:
-                            retval.AddRange(await Get<TEntity>(executionQuery, recursiveRequest - 1));
+                            retval.AddRange(await Get<TEntity>(executionQuery, recursiveRequest - 1, accountId));
                             break;
 
                         case > 0:
-                            retval.AddRange(await Get<TEntity>(executionQuery, recursiveRequest));
+                            retval.AddRange(await Get<TEntity>(executionQuery, recursiveRequest, accountId));
                             break;
                     }
                 }
@@ -275,7 +294,7 @@ namespace Sdk4me.GraphQL
             where TOutEntity : Payload
             where TInEntity : PropertyChangeSet
         {
-            using (HttpRequestMessage requestMessage = CreateHttpRequest())
+            using (HttpRequestMessage requestMessage = CreateHttpRequest(AccountID))
             {
                 JsonSerializerSettings settings = new()
                 {
@@ -321,7 +340,7 @@ namespace Sdk4me.GraphQL
                 throw new FileNotFoundException(file.FullName);
 
             using (FileStream stream = file.OpenRead())
-                return await UploadAttachment(stream as Stream, file.Name, contentType);
+                return await UploadAttachment(stream, file.Name, contentType);
         }
 
         /// <summary>
@@ -463,12 +482,12 @@ namespace Sdk4me.GraphQL
         /// Create a new <see cref="HttpRequestMessage"/>.
         /// </summary>
         /// <returns>The <see cref="HttpRequestMessage"/> object.</returns>
-        private HttpRequestMessage CreateHttpRequest(string? url = null)
+        private HttpRequestMessage CreateHttpRequest(string accountId, string? url = null)
         {
             SetAuthenticationToken();
             HttpRequestMessage retval = new(HttpMethod.Post, url ?? this.url);
             retval.Headers.Authorization = new AuthenticationHeaderValue(currentToken.TokenType, currentToken.Token);
-            retval.Headers.Add("x-4me-Account", accountID);
+            retval.Headers.Add("x-4me-Account", accountId);
             return retval;
         }
 
